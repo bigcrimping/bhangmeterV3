@@ -19,19 +19,12 @@ See each folder's `README.md` for full build / run / configuration instructions.
 
 ## How the pieces fit together
 
-```
-  light  ──▶  photodiode + comparator  ──▶  ┌─────────────────────────┐
-                                            │  optical_bhang firmware  │
-                                            │  (RP2350 / Pico 2 W)     │
-                                            └───────────┬─────────────┘
-                                          USB serial    │   WiFi / HTTPS
-                              ┌───────────────┘         │
-                              ▼                          ▼
-                   ┌────────────────────┐      GitHub-hosted JSON
-                   │  bhang_companion   │      (one event record per
-                   │  operator console  │       detection / beacon)
-                   └────────────────────┘
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/code-dataflow-dark.png">
+    <img alt="Software and data flow: the sensor + comparator feed the optical_bhang firmware (RP2350 / Pico 2 W), which publishes to the bhang_companion console over USB serial and to a GitHub-hosted JSON file over WiFi/HTTPS" src="../assets/code-dataflow-light.png" width="88%">
+  </picture>
+</p>
 
 - The **firmware** does all sensing, detection, and yield estimation on board,
   then publishes results to a JSON file in a GitHub repo of your choice.

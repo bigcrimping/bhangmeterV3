@@ -16,12 +16,12 @@ flashes it to confirm the whole detection chain is alive before relying on it.
 
 ## How it works
 
-```
-   light ─▶ VEMD2704 photodiode ─▶ AD8304 log amp ─▶ VOUT ─▶ (carrier board)
-                                                    ▲
-                          BIST_EN ─▶ BSS138 ─▶ HSMW-C191 white LED
-                                    (firmware self-test light source)
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../../assets/sensorhead-dark.png">
+    <img alt="Sensor-head signal chain: light into the VEMD2704 photodiode, AD8304 log amp, then VOUT to the carrier board; below, a BIST path where BIST_EN drives a BSS138 and an HSMW-C191 white LED that illuminates the photodiode for self-test" src="../../assets/sensorhead-light.png" width="88%">
+  </picture>
+</p>
 
 A **logarithmic** amplifier (AD8304, ~160 dB / 8-decade range) is used so the
 single front-end can span the enormous brightness ratio between the dim ambient

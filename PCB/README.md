@@ -8,21 +8,12 @@ schematics, assembly drawings, bills of materials, and fabrication Gerbers.
 The instrument is **two boards** that connect through a board-to-board
 connector — a small optical sensor head that plugs into a larger carrier board:
 
-```
-        incoming light
-              │
-              ▼
-   ┌──────────────────────────┐
-   │  BHG-3000  (sensor head)  │   VEMD2704 photodiode ─▶ AD8304 log amp ─▶ VOUT
-   │  20.1 × 12.5 mm           │   + white BIST LED for self-test
-   └────────────┬─────────────┘
-                │  Mill-Max 800-series board-to-board connector
-                ▼
-   ┌──────────────────────────┐   LT1711 comparator  → leading-edge timing
-   │  bhangmeterv3  (carrier)  │   AD7091R SPI ADC    → waveform shape
-   │  80 × 40 mm               │   Raspberry Pi Pico 2 W · status LEDs · USB
-   └──────────────────────────┘
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/pcb-boards-dark.png">
+    <img alt="The two boards: the BHG-3000 sensor head (VEMD2704 photodiode, AD8304 log amp, VOUT, BIST LED) plugs through a Mill-Max board-to-board connector into the bhangmeterv3 carrier board (LT1711 comparator, AD7091R SPI ADC, Raspberry Pi Pico 2 W, status LEDs, USB)" src="../assets/pcb-boards-light.png" width="80%">
+  </picture>
+</p>
 
 ## The two boards
 

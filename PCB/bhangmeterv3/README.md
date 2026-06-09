@@ -23,14 +23,12 @@ The schematic is organised into the sections below (matching the sheet labels):
 | **ADC + power supply** | `U4` AD7091R (SPI ADC), `U6` ADP151-3.3 LDO | Digitises the analog waveform for peak/minimum/second-peak analysis; generates the 3V3 rail. |
 | **BIST + LEDs** | `DS1/DS2/DS3` (W/G/R), `Q1–Q3` BSS138, `SW1` | Tri-colour status indication and the built-in self-test drive; user button. |
 
-```
-  sensor head ─▶ U1 (HSN-1000) ─▶ buffers ─┬─▶ LT1711 comparator ─▶ edge timing
-                                            └─▶ AD7091R ADC (SPI) ─▶ waveform
-                                                       │
-                                                       ▼
-                                          Raspberry Pi Pico 2 W (P2/P3)
-                                          firmware: detect · yield · BIST
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../../assets/carrier-dark.png">
+    <img alt="Carrier read-out chain: the sensor head feeds the U1 HSN-1000 socket and buffers, which branch to the LT1711 comparator (leading-edge timing) and the AD7091R SPI ADC (waveform shape), both feeding the Raspberry Pi Pico 2 W" src="../../assets/carrier-light.png" width="88%">
+  </picture>
+</p>
 
 ## Bill of materials
 
