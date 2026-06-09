@@ -223,12 +223,10 @@ def fig_double_pulse_overlay(fig):
     ax.set_title("Double-pulse optical signature, 10 kt - 1 Mt")
     ax.legend(ncol=2, loc="upper right")
     ax.annotate("1st pulse\n(~1 ms, yield-independent)", xy=(1.0, 1.0),
-                xytext=(1.4, 0.66), fontsize=8.5, color=C_TMIN,
+                xytext=(3.0, 0.86), fontsize=8.5, color=C_TMIN,
                 ha="left", va="center")
-    ax.annotate("2nd pulse slides right\nwith yield  (t ~ W^0.44)",
-                xy=(300, 0.6), xytext=(40, 0.30), fontsize=8.5, color=C_TINTER,
-                ha="left", va="center",
-                arrowprops=dict(arrowstyle="->", color=C_TINTER, lw=1.2))
+    ax.text(240, 0.69, "2nd pulse slides right\nwith yield  (t ~ W^0.44)",
+            fontsize=8.5, color=C_TINTER, ha="center", va="center")
 
 
 # --------------------------------------------------------------------------- #
@@ -409,85 +407,189 @@ def fig_vlog_waveforms(fig):
 
 
 # --------------------------------------------------------------------------- #
-# Block diagram - rendered replacement for the README's ASCII signal chain
+# Block diagrams - rendered replacements for the READMEs' ASCII signal chains
 # --------------------------------------------------------------------------- #
-def fig_block_diagram(fig):
-    fig.set_size_inches(11.0, 6.9)
+DG_FE, DG_CMP, DG_ADC = "#f59e0b", "#3b82f6", "#10b981"   # front-end / comparator / ADC
+DG_FW, DG_USB, DG_NET = "#a855f7", "#3b82f6", "#10b981"   # firmware / USB / network
+
+
+def _diagram_axes(fig, w_in, h_in, xlim, ylim):
+    """Borderless equal-aspect axes + themed box/arrow drawing helpers."""
+    fig.set_size_inches(w_in, h_in)
     ax = fig.subplots()
-    ax.set_xlim(0, 16)
-    ax.set_ylim(0, 10)
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
     ax.set_aspect("equal")
     ax.axis("off")
-
     dark = to_hex(plt.rcParams["figure.facecolor"]) == to_hex(
         THEMES["dark"]["figure.facecolor"])
-    face = "#1d2430" if dark else "#f3f5fa"
-    txt = "#e8ecf4" if dark else "#1b1f27"
-    line = "#7a8596" if dark else "#98a0ac"
+    C = {"face": "#1d2430" if dark else "#f3f5fa",
+         "txt": "#e8ecf4" if dark else "#1b1f27",
+         "line": "#7a8596" if dark else "#98a0ac"}
 
-    A_FE, A_CMP, A_ADC = "#f59e0b", "#3b82f6", "#10b981"
-    A_FW, A_USB, A_NET = "#a855f7", "#3b82f6", "#10b981"
-
-    def box(cx, cy, w, h, title, sub, accent, big=False):
+    def box(cx, cy, w, h, title, sub=None, accent="#888888", big=False,
+            lines=None):
         ax.add_patch(FancyBboxPatch(
             (cx - w / 2, cy - h / 2), w, h,
             boxstyle="round,pad=0,rounding_size=0.16", linewidth=1.7,
-            edgecolor=accent, facecolor=face, zorder=3))
-        if sub:
+            edgecolor=accent, facecolor=C["face"], zorder=3))
+        if lines is not None:                       # title + stacked content lines
+            ax.text(cx, cy + h / 2 - 0.34, title, ha="center", va="center",
+                    color=accent, fontsize=11, fontweight="bold", zorder=4)
+            y = cy + h / 2 - 0.82
+            for ln in lines:
+                ax.text(cx, y, ln, ha="center", va="center", color=C["txt"],
+                        fontsize=8.6, zorder=4)
+                y -= 0.46
+        elif sub:                                   # title + one subtitle
             dyt, dys = (0.27, 0.31) if big else (0.21, 0.25)
             ax.text(cx, cy + dyt, title, ha="center", va="center",
                     color=accent, fontsize=12 if big else 10.5,
                     fontweight="bold", zorder=4)
             ax.text(cx, cy - dys, sub, ha="center", va="center",
-                    color=txt, fontsize=8.4, zorder=4)
-        else:
+                    color=C["txt"], fontsize=8.4, zorder=4)
+        else:                                       # title only
             ax.text(cx, cy, title, ha="center", va="center", color=accent,
-                    fontsize=10.5, fontweight="bold", zorder=4)
+                    fontsize=12 if big else 10.5, fontweight="bold", zorder=4)
 
-    def arrow(pts, color=None):
-        color = color or line
+    def arrow(pts, color=None, ls="-"):
+        color = color or C["line"]
         if len(pts) > 2:
             ax.plot([p[0] for p in pts], [p[1] for p in pts], color=color,
-                    lw=1.7, zorder=2, solid_capstyle="round",
+                    lw=1.7, ls=ls, zorder=2, solid_capstyle="round",
                     solid_joinstyle="round")
         ax.add_patch(FancyArrowPatch(
             pts[-2], pts[-1], arrowstyle="-|>", mutation_scale=15, lw=1.7,
-            color=color, shrinkA=0, shrinkB=3, zorder=2))
+            color=color, linestyle=ls, shrinkA=0, shrinkB=3, zorder=2))
 
-    # Boxes ---------------------------------------------------------------- #
-    box(2.1, 8.7, 2.0, 1.1, "VEMD2704", "photodiode", A_FE)
-    box(4.9, 8.7, 2.0, 1.1, "AD8304", "log amp", A_FE)
+    return ax, box, arrow, C
+
+
+def fig_block_diagram(fig):
+    """Top-level README: photons -> front-end -> firmware -> companion / GitHub."""
+    ax, box, arrow, C = _diagram_axes(fig, 11.0, 6.9, (0, 16), (0, 10))
+    box(2.1, 8.7, 2.0, 1.1, "VEMD2704", "photodiode", DG_FE)
+    box(4.9, 8.7, 2.0, 1.1, "AD8304", "log amp", DG_FE)
     box(11.3, 8.7, 4.6, 1.1, "LT1711 comparator",
-        "leading-edge timing · sub-µs", A_CMP)
-    box(9.3, 6.9, 4.6, 1.1, "AD7091R ADC", "SPI · waveform shape", A_ADC)
+        "leading-edge timing · sub-µs", DG_CMP)
+    box(9.3, 6.9, 4.6, 1.1, "AD7091R ADC", "SPI · waveform shape", DG_ADC)
     box(9.5, 5.3, 9.2, 1.4, "RP2350 · Pico 2 W firmware",
-        "detection state machine · yield maths · BIST", A_FW, big=True)
+        "detection state machine · yield maths · BIST", DG_FW, big=True)
     box(5.0, 2.5, 5.4, 1.3, "Companion app",
-        "USB serial · drive · watch · configure", A_USB)
+        "USB serial · drive · watch · configure", DG_USB)
     box(12.5, 2.5, 5.4, 1.3, "GitHub JSON",
-        "WiFi / HTTPS · one record per event", A_NET)
-
-    # Branch junction dot on the AD8304 output.
-    ax.plot([6.4], [8.7], "o", color=line, ms=5, zorder=4)
-
-    # Arrows --------------------------------------------------------------- #
-    arrow([(0.45, 8.7), (1.1, 8.7)], A_FE)            # light in
-    ax.text(0.05, 9.08, "light", color=A_FE, fontsize=9, ha="left",
+        "WiFi / HTTPS · one record per event", DG_NET)
+    ax.plot([6.4], [8.7], "o", color=C["line"], ms=5, zorder=4)
+    arrow([(0.45, 8.7), (1.1, 8.7)], DG_FE)
+    ax.text(0.05, 9.08, "light", color=DG_FE, fontsize=9, ha="left",
             va="center", fontweight="bold")
-    arrow([(3.1, 8.7), (3.9, 8.7)])                   # photodiode -> log amp
-    arrow([(5.9, 8.7), (9.0, 8.7)])                   # log amp -> comparator
-    arrow([(6.4, 8.7), (6.4, 6.9), (7.0, 6.9)])       # branch -> ADC
-    arrow([(13.3, 8.15), (13.3, 6.0)])                # comparator -> firmware
-    arrow([(9.3, 6.35), (9.3, 6.0)])                  # ADC -> firmware (centred)
-    arrow([(5.0, 4.6), (5.0, 3.15)])                  # -> companion (straight)
-    arrow([(12.5, 4.6), (12.5, 3.15)])                # -> GitHub (straight)
-
+    arrow([(3.1, 8.7), (3.9, 8.7)])
+    arrow([(5.9, 8.7), (9.0, 8.7)])
+    arrow([(6.4, 8.7), (6.4, 6.9), (7.0, 6.9)])
+    arrow([(13.3, 8.15), (13.3, 6.0)])
+    arrow([(9.3, 6.35), (9.3, 6.0)])
+    arrow([(5.0, 4.6), (5.0, 3.15)])
+    arrow([(12.5, 4.6), (12.5, 3.15)])
     ax.set_title("Signal chain — photons in, published yield out",
-                 color=txt, fontsize=13, fontweight="bold", pad=10)
+                 color=C["txt"], fontsize=13, fontweight="bold", pad=10)
+
+
+def fig_code_dataflow(fig):
+    """code/README.md: front-end -> firmware -> companion (USB) / GitHub (WiFi)."""
+    ax, box, arrow, C = _diagram_axes(fig, 10.5, 6.0, (0, 16), (0, 9))
+    box(3.4, 6.6, 4.2, 1.3, "Sensor + comparator",
+        "photodiode · edge + shape", DG_FE)
+    box(10.7, 6.6, 6.2, 1.5, "optical_bhang firmware",
+        "RP2350 · Pico 2 W — detect · yield · BIST", DG_FW, big=True)
+    box(4.3, 2.0, 5.8, 1.5, "bhang_companion",
+        "USB serial · drive · watch · plot", DG_USB)
+    box(11.9, 2.0, 6.2, 1.5, "GitHub-hosted JSON",
+        "WiFi / HTTPS · one record per event", DG_NET)
+    arrow([(0.5, 6.6), (1.3, 6.6)], DG_FE)
+    ax.text(0.1, 7.05, "light", color=DG_FE, fontsize=9, ha="left",
+            va="center", fontweight="bold")
+    arrow([(5.5, 6.6), (7.6, 6.6)])
+    arrow([(8.9, 5.85), (8.9, 4.7), (4.3, 4.7), (4.3, 2.75)])
+    arrow([(12.5, 5.85), (12.5, 4.7), (11.9, 4.7), (11.9, 2.75)])
+    ax.set_title("Software & data flow — on-device detection to published record",
+                 color=C["txt"], fontsize=12.5, fontweight="bold", pad=10)
+
+
+def fig_pcb_boards(fig):
+    """PCB/README.md: the two stacked boards joined by the module connector."""
+    ax, box, arrow, C = _diagram_axes(fig, 9.6, 6.6, (0, 16), (0, 11))
+    box(8.0, 8.0, 13.0, 2.4, "BHG-3000 · sensor head   (20.1 × 12.5 mm)",
+        accent=DG_FE,
+        lines=["VEMD2704 photodiode  →  AD8304 log amp  →  VOUT",
+               "+ white HSMW-C191 BIST LED for self-test"])
+    box(8.0, 2.6, 13.0, 2.4, "bhangmeterv3 · carrier board   (80 × 40 mm)",
+        accent=DG_CMP,
+        lines=["LT1711 comparator → edge timing    ·    AD7091R SPI ADC → waveform",
+               "Raspberry Pi Pico 2 W  ·  status LEDs  ·  USB"])
+    arrow([(8.0, 10.5), (8.0, 9.2)], DG_FE)
+    ax.text(8.0, 10.7, "incoming light", color=DG_FE, fontsize=9,
+            ha="center", va="bottom", fontweight="bold")
+    arrow([(8.0, 6.8), (8.0, 3.8)])
+    for yy in (5.55, 5.05):
+        ax.plot([7.3, 8.7], [yy, yy], color=C["line"], lw=2.2, zorder=4,
+                solid_capstyle="round")
+    ax.text(9.1, 5.3, "Mill-Max 800-series\nboard-to-board connector",
+            color=C["txt"], fontsize=8.4, ha="left", va="center")
+    ax.set_title("Two boards — optical sensor head over the carrier",
+                 color=C["txt"], fontsize=12.5, fontweight="bold", pad=10)
+
+
+def fig_sensorhead(fig):
+    """PCB/BHG-3000/README.md: log-amp chain + BIST LED that lights the diode."""
+    ax, box, arrow, C = _diagram_axes(fig, 11.0, 5.6, (0, 16), (0, 8))
+    box(3.0, 6.0, 3.0, 1.1, "VEMD2704", "photodiode", DG_FE)
+    box(7.2, 6.0, 3.0, 1.1, "AD8304", "log amp", DG_FE)
+    box(12.3, 6.0, 4.2, 1.1, "VOUT → carrier", "(bhangmeterv3)", DG_CMP)
+    box(3.0, 2.3, 3.4, 1.0, "HSMW-C191", "white BIST LED", DG_FE)
+    box(7.5, 2.3, 2.8, 1.0, "BSS138", "LED driver", DG_ADC)
+    arrow([(0.4, 6.0), (1.5, 6.0)], DG_FE)
+    ax.text(0.1, 6.45, "light", color=DG_FE, fontsize=9, ha="left",
+            va="center", fontweight="bold")
+    arrow([(4.5, 6.0), (5.7, 6.0)])
+    arrow([(8.7, 6.0), (10.2, 6.0)])
+    arrow([(10.5, 2.3), (8.9, 2.3)])
+    ax.text(10.7, 2.3, "BIST_EN\n(from carrier)", color=C["txt"], fontsize=8,
+            ha="left", va="center")
+    arrow([(6.1, 2.3), (4.7, 2.3)])
+    arrow([(3.0, 2.8), (3.0, 5.45)], DG_FE, ls=(0, (4, 3)))
+    ax.text(3.45, 4.05, "illuminates\nphotodiode", color=DG_FE, fontsize=8,
+            ha="left", va="center")
+    ax.set_title("Sensor head — log-amp front-end + BIST self-test",
+                 color=C["txt"], fontsize=12.5, fontweight="bold", pad=10)
+
+
+def fig_carrier(fig):
+    """PCB/bhangmeterv3/README.md: socket -> buffers -> comparator/ADC -> Pico."""
+    ax, box, arrow, C = _diagram_axes(fig, 11.0, 6.4, (0, 16), (0, 9.5))
+    box(1.9, 7.6, 2.8, 1.1, "sensor head", "BHG-3000", DG_FE)
+    box(5.3, 7.6, 2.6, 1.1, "U1 · HSN-1000", "module socket", DG_FE)
+    box(8.3, 7.6, 2.4, 1.1, "buffers", "SN74LXC1T14", DG_CMP)
+    box(13.0, 7.6, 4.8, 1.0, "LT1711 comparator", "leading-edge timing", DG_CMP)
+    box(11.0, 5.6, 4.8, 1.0, "AD7091R ADC", "SPI · waveform shape", DG_ADC)
+    box(9.0, 2.5, 11.0, 1.5, "Raspberry Pi Pico 2 W",
+        "P2 / P3 sockets · firmware: detect · yield · BIST", DG_FW, big=True)
+    arrow([(3.3, 7.6), (4.0, 7.6)])
+    arrow([(6.6, 7.6), (7.1, 7.6)])
+    arrow([(9.5, 7.6), (10.6, 7.6)])
+    ax.plot([9.95], [7.6], "o", color=C["line"], ms=5, zorder=4)
+    arrow([(9.95, 7.6), (9.95, 6.1)])
+    arrow([(14.2, 7.1), (14.2, 3.25)])
+    arrow([(11.0, 5.1), (11.0, 3.25)])
+    ax.set_title("Carrier read-out chain — edge + shape into the Pico",
+                 color=C["txt"], fontsize=12.5, fontweight="bold", pad=10)
 
 
 FIGURES = {
     "block-diagram": fig_block_diagram,
+    "code-dataflow": fig_code_dataflow,
+    "pcb-boards": fig_pcb_boards,
+    "sensorhead": fig_sensorhead,
+    "carrier": fig_carrier,
     "double-pulse-overlay": fig_double_pulse_overlay,
     "double-pulse-annotated": fig_double_pulse_annotated,
     "timing-vs-yield": fig_timing_vs_yield,
