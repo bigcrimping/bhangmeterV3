@@ -36,6 +36,8 @@ matplotlib.use("Agg")  # headless: write files, never open a window
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_hex
+from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
 # --------------------------------------------------------------------------- #
 # Output location: repo_root/assets/  (this file lives in repo_root/assets/src)
@@ -406,7 +408,86 @@ def fig_vlog_waveforms(fig):
     fig.tight_layout(rect=(0, 0, 1, 0.97))
 
 
+# --------------------------------------------------------------------------- #
+# Block diagram - rendered replacement for the README's ASCII signal chain
+# --------------------------------------------------------------------------- #
+def fig_block_diagram(fig):
+    fig.set_size_inches(11.0, 6.9)
+    ax = fig.subplots()
+    ax.set_xlim(0, 16)
+    ax.set_ylim(0, 10)
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    dark = to_hex(plt.rcParams["figure.facecolor"]) == to_hex(
+        THEMES["dark"]["figure.facecolor"])
+    face = "#1d2430" if dark else "#f3f5fa"
+    txt = "#e8ecf4" if dark else "#1b1f27"
+    line = "#7a8596" if dark else "#98a0ac"
+
+    A_FE, A_CMP, A_ADC = "#f59e0b", "#3b82f6", "#10b981"
+    A_FW, A_USB, A_NET = "#a855f7", "#3b82f6", "#10b981"
+
+    def box(cx, cy, w, h, title, sub, accent, big=False):
+        ax.add_patch(FancyBboxPatch(
+            (cx - w / 2, cy - h / 2), w, h,
+            boxstyle="round,pad=0,rounding_size=0.16", linewidth=1.7,
+            edgecolor=accent, facecolor=face, zorder=3))
+        if sub:
+            dyt, dys = (0.27, 0.31) if big else (0.21, 0.25)
+            ax.text(cx, cy + dyt, title, ha="center", va="center",
+                    color=accent, fontsize=12 if big else 10.5,
+                    fontweight="bold", zorder=4)
+            ax.text(cx, cy - dys, sub, ha="center", va="center",
+                    color=txt, fontsize=8.4, zorder=4)
+        else:
+            ax.text(cx, cy, title, ha="center", va="center", color=accent,
+                    fontsize=10.5, fontweight="bold", zorder=4)
+
+    def arrow(pts, color=None):
+        color = color or line
+        if len(pts) > 2:
+            ax.plot([p[0] for p in pts], [p[1] for p in pts], color=color,
+                    lw=1.7, zorder=2, solid_capstyle="round",
+                    solid_joinstyle="round")
+        ax.add_patch(FancyArrowPatch(
+            pts[-2], pts[-1], arrowstyle="-|>", mutation_scale=15, lw=1.7,
+            color=color, shrinkA=0, shrinkB=3, zorder=2))
+
+    # Boxes ---------------------------------------------------------------- #
+    box(2.1, 8.7, 2.0, 1.1, "VEMD2704", "photodiode", A_FE)
+    box(4.9, 8.7, 2.0, 1.1, "AD8304", "log amp", A_FE)
+    box(11.3, 8.7, 4.6, 1.1, "LT1711 comparator",
+        "leading-edge timing · sub-µs", A_CMP)
+    box(9.3, 6.9, 4.6, 1.1, "AD7091R ADC", "SPI · waveform shape", A_ADC)
+    box(9.5, 5.3, 9.2, 1.4, "RP2350 · Pico 2 W firmware",
+        "detection state machine · yield maths · BIST", A_FW, big=True)
+    box(5.0, 2.5, 5.4, 1.3, "Companion app",
+        "USB serial · drive · watch · configure", A_USB)
+    box(12.5, 2.5, 5.4, 1.3, "GitHub JSON",
+        "WiFi / HTTPS · one record per event", A_NET)
+
+    # Branch junction dot on the AD8304 output.
+    ax.plot([6.4], [8.7], "o", color=line, ms=5, zorder=4)
+
+    # Arrows --------------------------------------------------------------- #
+    arrow([(0.45, 8.7), (1.1, 8.7)], A_FE)            # light in
+    ax.text(0.05, 9.08, "light", color=A_FE, fontsize=9, ha="left",
+            va="center", fontweight="bold")
+    arrow([(3.1, 8.7), (3.9, 8.7)])                   # photodiode -> log amp
+    arrow([(5.9, 8.7), (9.0, 8.7)])                   # log amp -> comparator
+    arrow([(6.4, 8.7), (6.4, 6.9), (7.0, 6.9)])       # branch -> ADC
+    arrow([(13.3, 8.15), (13.3, 6.0)])                # comparator -> firmware
+    arrow([(9.3, 6.35), (9.3, 6.0)])                  # ADC -> firmware (centred)
+    arrow([(5.0, 4.6), (5.0, 3.15)])                  # -> companion (straight)
+    arrow([(12.5, 4.6), (12.5, 3.15)])                # -> GitHub (straight)
+
+    ax.set_title("Signal chain — photons in, published yield out",
+                 color=txt, fontsize=13, fontweight="bold", pad=10)
+
+
 FIGURES = {
+    "block-diagram": fig_block_diagram,
     "double-pulse-overlay": fig_double_pulse_overlay,
     "double-pulse-annotated": fig_double_pulse_annotated,
     "timing-vs-yield": fig_timing_vs_yield,

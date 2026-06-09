@@ -81,20 +81,12 @@ instrument's scope.)
 
 ## How the instrument works
 
-```
-   light ─▶ VEMD2704 photodiode ─▶ AD8304 log amp ─┬─▶ LT1711 comparator ─▶ edge timing (sub-µs)
-                                                   │
-                                                   ├─▶ AD7091R ADC (SPI) ─▶ waveform shape
-                                                   │
-                                                   ▼
-                                      RP2350 (Pico 2 W) firmware
-                             detection state machine · yield maths · BIST
-                                                   │
-                 ┌─────────────────────────────────┴───────────────┐
-                 ▼                                                 ▼
-     USB serial → companion app                         WiFi/HTTPS → GitHub JSON
-     (drive, watch, plot, configure)                  (one record per event/beacon)
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/block-diagram-dark.png">
+    <img alt="Signal chain: light into the VEMD2704 photodiode, through the AD8304 log amp, fanning out to the LT1711 comparator (edge timing) and AD7091R ADC (waveform shape), both into the RP2350 Pico 2 W firmware, which publishes over USB serial to the companion app and over WiFi/HTTPS to GitHub JSON" src="assets/block-diagram-light.png" width="92%">
+  </picture>
+</p>
 
 A detection requires **all** of: a fast leading edge (comparator), a first peak
 followed by a measurable minimum, and a second peak whose timing falls in the
