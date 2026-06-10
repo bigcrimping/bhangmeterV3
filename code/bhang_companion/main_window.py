@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import csv
 import os
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, QThread, Signal, Slot
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QDockWidget,
     QFileDialog,
@@ -44,6 +46,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Bhangmeter Companion")
         self.resize(1280, 800)
+
+        icon_path = Path(__file__).resolve().parents[2] / "assets" / "bhang.png"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
 
         self._last_capture: Optional[Capture] = None
         self._assembler = DumpAssembler()
