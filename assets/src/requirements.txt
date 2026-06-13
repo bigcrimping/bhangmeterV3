@@ -1,0 +1,4 @@
+# Tooling deps for regenerating the documentation figures (assets/*.png).
+# Not needed at runtime by the firmware or the companion app.
+matplotlib==3.10.8
+numpy==2.4.2

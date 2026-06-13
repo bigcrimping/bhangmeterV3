@@ -1,0 +1,22 @@
+# Python (companion app)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# Firmware build output (Pico SDK / CMake)
+build/
+cmake-build-*/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.vscode/
+.idea/

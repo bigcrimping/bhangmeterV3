@@ -1,0 +1,165 @@
+/* coldwar.qss — dark theme, monospace, amber accents */
+
+QWidget {
+    background-color: #1a1a1a;
+    color: #d0d0d0;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 10pt;
+}
+
+QMainWindow, QDialog {
+    background-color: #141414;
+}
+
+/* Menu bar */
+QMenuBar {
+    background-color: #222222;
+    color: #cccccc;
+    border-bottom: 1px solid #333333;
+}
+QMenuBar::item:selected {
+    background-color: #FFA500;
+    color: #000000;
+}
+QMenu {
+    background-color: #222222;
+    border: 1px solid #444444;
+}
+QMenu::item:selected {
+    background-color: #FFA500;
+    color: #000000;
+}
+
+/* Buttons */
+QPushButton {
+    background-color: #2e2e2e;
+    color: #d0d0d0;
+    border: 1px solid #444444;
+    border-radius: 3px;
+    padding: 4px 10px;
+    min-height: 22px;
+}
+QPushButton:hover {
+    border-color: #FFA500;
+    color: #FFA500;
+}
+QPushButton:pressed {
+    background-color: #FFA500;
+    color: #000000;
+}
+QPushButton:disabled {
+    color: #555555;
+    border-color: #333333;
+}
+QPushButton:checked {
+    background-color: #3a3000;
+    border-color: #FFA500;
+    color: #FFA500;
+}
+
+/* Group boxes */
+QGroupBox {
+    border: 1px solid #444444;
+    border-radius: 4px;
+    margin-top: 8px;
+    padding-top: 4px;
+    font-weight: bold;
+    color: #888888;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 8px;
+    padding: 0 4px;
+    color: #FFA500;
+}
+
+/* Combo boxes */
+QComboBox {
+    background-color: #2e2e2e;
+    border: 1px solid #444444;
+    border-radius: 3px;
+    padding: 2px 6px;
+    color: #d0d0d0;
+}
+QComboBox:hover {
+    border-color: #FFA500;
+}
+QComboBox QAbstractItemView {
+    background-color: #222222;
+    selection-background-color: #FFA500;
+    selection-color: #000000;
+}
+
+/* Spin box */
+QSpinBox {
+    background-color: #2e2e2e;
+    border: 1px solid #444444;
+    border-radius: 3px;
+    padding: 2px 4px;
+    color: #d0d0d0;
+}
+
+/* Plain text / console */
+QPlainTextEdit {
+    background-color: #111111;
+    color: #b0ffb0;
+    border: 1px solid #333333;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 9pt;
+}
+
+/* Scroll bars */
+QScrollBar:vertical {
+    background: #1a1a1a;
+    width: 10px;
+}
+QScrollBar::handle:vertical {
+    background: #444444;
+    border-radius: 4px;
+    min-height: 20px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #FFA500;
+}
+QScrollBar:horizontal {
+    background: #1a1a1a;
+    height: 10px;
+}
+QScrollBar::handle:horizontal {
+    background: #444444;
+    border-radius: 4px;
+    min-width: 20px;
+}
+
+/* Dock widgets */
+QDockWidget {
+    color: #FFA500;
+    font-weight: bold;
+    titlebar-close-icon: url(none);
+}
+QDockWidget::title {
+    background-color: #222222;
+    padding-left: 6px;
+    border-bottom: 1px solid #444444;
+}
+
+/* Status bar */
+QStatusBar {
+    background-color: #111111;
+    color: #888888;
+    border-top: 1px solid #333333;
+}
+
+/* Tool button (refresh) */
+QToolButton {
+    background-color: #2e2e2e;
+    border: 1px solid #444444;
+    border-radius: 3px;
+    padding: 2px 6px;
+    color: #d0d0d0;
+}
+QToolButton:hover {
+    border-color: #FFA500;
+    color: #FFA500;
+}
