@@ -9,7 +9,7 @@ theme-matched image through a `<picture>` + `prefers-color-scheme` block.
 
 ```sh
 python -m pip install -r assets/src/requirements.txt   # matplotlib + numpy
-python assets/src/generate_figures.py                  # writes 24 PNGs to assets/
+python assets/src/generate_figures.py                  # writes 26 PNGs to assets/
 ```
 
 The script is self-contained (no network, no input files). It prints sanity

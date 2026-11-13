@@ -151,7 +151,6 @@ static float    g_yield_tmin_kt   = -1.0f;
 static float    g_yield_tinter_kt = -1.0f;
 static float    g_t_min_ms        = -1.0f;
 static float    g_t_inter_ms      = -1.0f;
-static uint32_t g_capture_count   = 0u;
 static bool     g_yield_valid     = false;
 static bool     g_tmin_suspect    = false;  /* t_min outside its wide window (advisory only) */
 static char     g_reject_reason[64];
@@ -168,12 +167,12 @@ static uint16_t cmd_pos = 0;
  * Cross-core result handoff (core0 detection → core1 networking)
  * --------------------------------------------------------------------------- */
 typedef struct {
-    char     source[8];   /* "REAL" / "BIST" */
+    char     source[8];   /* "REAL" (BIST results are never queued) */
+    uint64_t t0_boot_us;  /* flash onset, time_us_64(); core1 converts to UTC */
     float    t_min_ms;
     float    t_inter_ms;
     float    yield_tmin_kt;
     float    yield_tinter_kt;
-    uint32_t capture_count;
 } upload_msg_t;
 
 #define RESULT_QUEUE_DEPTH 4
@@ -437,7 +436,8 @@ static bool analyse_waveform(void) {
      * ~250 mV) real-signature minimum that defeated the old global mid-line gate. */
     #define REV_HYST_MV      60
     #define REV_HYST_COUNTS  ((int32_t)((REV_HYST_MV * 4095L) / ADC_REF_MV))
-    /* Sanity floor: first peak must reach at least the comparator threshold (1.1 V). */
+    /* Sanity floor: first peak must clear the comparator threshold (1.03 V) with
+     * a little margin. */
     #define P1_FLOOR_COUNTS  ((int32_t)((1100L * 4095L) / ADC_REF_MV))
 
     enum { SEEK_P1, SEEK_MIN, SEEK_P2, SEEK_DONE } seek = SEEK_P1;
@@ -536,11 +536,11 @@ static void format_kt(float val, char *buf, size_t len) {
 static void queue_upload(const char *source) {
     upload_msg_t m;
     snprintf(m.source, sizeof(m.source), "%s", source);
+    m.t0_boot_us      = g_t0_epoch_us;
     m.t_min_ms        = g_t_min_ms;
     m.t_inter_ms      = g_t_inter_ms;
     m.yield_tmin_kt   = g_yield_tmin_kt;
     m.yield_tinter_kt = g_yield_tinter_kt;
-    m.capture_count   = g_capture_count;
     if (!queue_try_add(&g_result_q, &m))
         printf("%s", "UPLOAD_DROPPED queue_full\r\n");
 }
@@ -560,7 +560,7 @@ static void cmd_help(void) {
         "  SET <key> <value>                  Set a config field (see SHOW)\r\n"
         "  SHOW                               Print config (secrets masked)\r\n"
         "  SAVE                               Persist config to flash (IDLE only)\r\n"
-        "  CLEAR                              Erase saved config (next boot)\r\n"
+        "  CLEAR                              Erase saved config (IDLE only; next boot)\r\n"
         "  HELP                               Print this list\r\n"
     );
 }
@@ -608,6 +608,11 @@ static void cmd_save(void) {
 }
 
 static void cmd_clear(void) {
+    /* Same gate as SAVE: the erase masks interrupts and would delay an onset. */
+    if (!g_config_mode && g_state != STATE_IDLE) {
+        printf("%s", "ERR not_idle (DISARM first)\r\n");
+        return;
+    }
     config_clear();
     printf("%s", "OK CLEARED (reboot to re-enter config mode)\r\n");
 }
@@ -744,6 +749,11 @@ static void do_bist(uint8_t idx) {
 
     set_state(STATE_ANALYSING);
     char buf[96];
+    /* Clear the previous event's results first (as the real-detection path
+     * does), so a failed analysis cannot leave stale yields/timings attached to
+     * this run's waveform in STATUS and DUMP. */
+    g_t_min_ms = g_t_inter_ms = -1.0f;
+    g_yield_tmin_kt = g_yield_tinter_kt = -1.0f;
     bool analysed = analyse_waveform();
 
     /* Grade against the geometry the square BIST stimulus actually produces, not
@@ -767,8 +777,7 @@ static void do_bist(uint8_t idx) {
         snprintf(buf, sizeof(buf),
                  "BIST_DONE %s YIELD tinter=%s kt GEOM tmin=%.1f ms (expect ~%.1f)\r\n",
                  PRESETS[idx].label, kt2, (double)g_t_min_ms, (double)tm_pred);
-        g_capture_count++;
-        led_bist_pass();        /* green flashes ~5 s; R restored to NED latch (does not clear it) */
+        led_bist_pass();       /* green flashes ~5 s; R restored to NED latch (does not clear it) */
         printf("%s", buf);
         /* Local self-test only — no upload (synthetic yields must not touch the
          * shared status record). Restore the prior detection state. */
@@ -839,6 +848,13 @@ static void process_command(char *line) {
     while (*arg == ' ') arg++;
 
     const char *verb = line;
+    /* First-boot config mode runs before cyw43 and the detection IRQ handlers
+     * exist, so enabling the COMP_OUT interrupt (ARM, or the re-arm after BIST)
+     * would leave an edge with no handler to acknowledge it. */
+    if (g_config_mode && (strcmp(verb, "ARM") == 0 || strcmp(verb, "BIST") == 0)) {
+        printf("%s", "ERR config_mode (SAVE first)\r\n");
+        return;
+    }
     if      (strcmp(verb, "HELP")      == 0) cmd_help();
     else if (strcmp(verb, "ARM")       == 0) cmd_arm();
     else if (strcmp(verb, "DISARM")    == 0) cmd_disarm();
@@ -884,7 +900,7 @@ static void serial_poll(void) {
  * onset) at t0 and trigger the ADC capture. Yield is NOT derived here — t_min and
  * t_inter are measured from the captured ADC waveform by analyse_waveform(),
  * because an in-envelope signal's shallow (~1-decade) minimum never recrosses the
- * 1.1 V threshold mid-event, so a second falling edge cannot occur for a real
+ * 1.03 V threshold mid-event, so a second falling edge cannot occur for a real
  * double-flash.
  *
  * The fall→rise→fall edge bookkeeping is retained only to populate the edge log
@@ -934,7 +950,7 @@ static void comp_out_raw_handler(void) {
         }
         /* The edge log is kept (useful in DUMP), but acceptance and t_inter are no
          * longer derived here: an in-envelope signal's shallow (~1-decade) minimum
-         * never recrosses the 1.1 V threshold mid-event, so a phase-2 FALL cannot
+         * never recrosses the 1.03 V threshold mid-event, so a phase-2 FALL cannot
          * occur for a real double-flash. t_inter/t_min are measured from the ADC
          * waveform in analyse_waveform() instead. */
         g_edge_phase          = 0;
@@ -1052,8 +1068,10 @@ static void core1_main(void) {
 
     /* A REAL detection is critical data, so it is never dropped: if its upload
      * fails it is held here and retried on a growing backoff (capped at 5 min)
-     * until it lands. BIST/beacon failures stay best-effort. The red NED LED
-     * stays latched as the local indicator while a REAL upload is outstanding. */
+     * until it lands. Nothing further is dequeued while one is held, so later
+     * detections wait in the queue and upload in order afterwards. Beacon
+     * failures stay best-effort. The red NED LED stays latched as the local
+     * indicator while a REAL upload is outstanding. */
     upload_msg_t    pending_real;
     bool            have_pending       = false;
     uint32_t        pending_backoff_ms = 0;
@@ -1063,19 +1081,17 @@ static void core1_main(void) {
         /* Recover the link (or back off) before attempting any upload. */
         net_ensure_connected();
 
-        if (queue_try_remove(&g_result_q, &m)) {
+        if (!have_pending && queue_try_remove(&g_result_q, &m)) {
             printf("NET: dequeued %s event -> uploading\r\n", m.source);
-            if (!net_upload_optical(m.source, m.t_min_ms, m.t_inter_ms,
-                                    m.yield_tmin_kt, m.yield_tinter_kt, m.capture_count)) {
+            if (!net_upload_optical(m.source, m.t0_boot_us, m.t_min_ms, m.t_inter_ms,
+                                    m.yield_tmin_kt, m.yield_tinter_kt)) {
                 led_upload_error();   /* transient red flash (preserves NED latch) */
-                if (strcmp(m.source, "REAL") == 0 && !have_pending) {
+                if (strcmp(m.source, "REAL") == 0) {
                     pending_real       = m;
                     have_pending       = true;
                     pending_backoff_ms = 5000u;
                     pending_next       = make_timeout_time_ms(pending_backoff_ms);
                     printf("NET: REAL upload failed; holding for retry\r\n");
-                } else if (strcmp(m.source, "REAL") == 0) {
-                    printf("NET: REAL upload failed but a retry is already pending; dropped\r\n");
                 }
             }
         }
@@ -1083,9 +1099,9 @@ static void core1_main(void) {
         /* Retry a held REAL detection once its backoff elapses. */
         if (have_pending && time_reached(pending_next)) {
             printf("NET: retrying held REAL detection...\r\n");
-            if (net_upload_optical(pending_real.source, pending_real.t_min_ms,
-                                   pending_real.t_inter_ms, pending_real.yield_tmin_kt,
-                                   pending_real.yield_tinter_kt, pending_real.capture_count)) {
+            if (net_upload_optical(pending_real.source, pending_real.t0_boot_us,
+                                   pending_real.t_min_ms, pending_real.t_inter_ms,
+                                   pending_real.yield_tmin_kt, pending_real.yield_tinter_kt)) {
                 have_pending = false;
                 printf("NET: held REAL detection uploaded\r\n");
             } else {
@@ -1187,7 +1203,7 @@ int main(void) {
          * The comparator only timestamps the onset and triggers the capture; both
          * t_min and t_inter are measured from the ADC trace by analyse_waveform()
          * (peak/min/peak shape + timing band), because an in-envelope signal's
-         * shallow (~1-decade) minimum never recrosses the 1.1 V threshold mid-event,
+         * shallow (~1-decade) minimum never recrosses the 1.03 V threshold mid-event,
          * so the old fall→rise→fall edge machine can never complete for a real event. */
         if (g_start_capture) {
             g_start_capture = false;
@@ -1196,7 +1212,7 @@ int main(void) {
             g_t_min_ms = g_t_inter_ms = -1.0f;
             g_yield_tmin_kt = g_yield_tinter_kt = -1.0f;
             if (analyse_waveform()) {
-                led_ned_event();   /* real double-flash → latch red until next BIST pass */
+                led_ned_event();   /* real double-flash → latch red until reboot */
                 char kt1[16], kt2[16], buf[80];
                 format_kt(g_yield_tmin_kt,   kt1, sizeof(kt1));
                 format_kt(g_yield_tinter_kt, kt2, sizeof(kt2));
@@ -1204,7 +1220,6 @@ int main(void) {
                          kt1, kt2, g_tmin_suspect ? " T_MIN_SUSPECT" : "");
                 printf("%s", buf);
                 set_state(STATE_DONE);
-                g_capture_count++;
                 queue_upload("REAL");   /* core1 uploads; core0 re-arms immediately */
             } else {
                 char buf[80];

@@ -2,9 +2,9 @@
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 
-/* NED ("nuke detected") indication latches LED_R until a BIST pass clears it.
+/* NED ("nuke detected") indication latches LED_R until reboot.
  * The latch is written only on core0 (detection sets it via led_ned_event(),
- * BIST/init clear it). core1 only *reads* it — the Wi-Fi blink/connect paths and
+ * led_init() clears it; a BIST does not). core1 only *reads* it — the Wi-Fi blink/connect paths and
  * the upload-error flash restore R to g_ned_latched instead of clobbering it, so
  * a real detection stays lit through any Wi-Fi reconnect. A plain volatile bool
  * is sufficient: the single writer means single-word writes with no cross-core

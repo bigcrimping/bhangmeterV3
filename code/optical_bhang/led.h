@@ -2,7 +2,7 @@
 #include <stdbool.h>
 
 /* ---------------------------------------------------------------------------
- * BhangMeter V2 status LEDs — see bhangmeter_led_behaviour.md.
+ * Bhangmeter V3 status LEDs — behaviour is tabulated in README.md.
  *
  * Pins are free on pico2_w (no clash with SPI 16-19, ADC_CONVST 20, LATCH 8,
  * COMP_OUT 9, PUSH_BUTTON 12, BIST_EN 14).
@@ -24,5 +24,5 @@ void led_wifi_failed(void);     /* R on; W off; G off */
 void led_ned_event(void);       /* R on, latched until reboot (BIST no longer clears it) */
 void led_bist_start(void);      /* BIST begins: G steady on for the run */
 void led_bist_pass(void);       /* G flashes 5x (1 s period, ~5 s); R restored to NED latch */
-void led_bist_fail(void);       /* G steady + R flashes 5x (1 s period, ~5 s); both restored to NED latch */
+void led_bist_fail(void);       /* G steady + R flashes 5x (1 s period, ~5 s); then G off, R restored to NED latch */
 void led_upload_error(void);    /* R on ~1 s then restore (non-latching; preserves NED latch) */

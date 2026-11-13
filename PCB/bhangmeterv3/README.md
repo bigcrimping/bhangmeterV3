@@ -19,7 +19,7 @@ The schematic is organised into the sections below (matching the sheet labels):
 |---|---|---|
 | **USB + Raspberry Pi Pico** | `J1` USB3105-30-A, `P2`/`P3` 20-pin sockets | USB power/data in; sockets the Pico 2 W (RP2350) that runs the firmware. |
 | **Module connector + buffers** | `U1` HSN-1000 socket, `U2`/`U3` SN74LXC1T14 | Mates the sensor head; buffers/level-shifts the signals coming back from it. |
-| **Edge detector** | `U5` LT1711CMS8 comparator | Timestamps the fast leading edge of the first pulse (latched output), independent of amplitude. |
+| **Edge detector** | `U5` LT1711CMS8 comparator | Timestamps the fast leading edge of the first pulse, independent of amplitude. Threshold ≈1.03 V, set by `R18`/`R20` (2.21 k / 1 k from 3V3). The latch input is wired to the Pico but the firmware holds it transparent. |
 | **ADC + power supply** | `U4` AD7091R (SPI ADC), `U6` ADP151-3.3 LDO | Digitises the analog waveform for peak/minimum/second-peak analysis; generates the 3V3 rail. |
 | **BIST + LEDs** | `DS1/DS2/DS3` (W/G/R), `Q1–Q3` BSS138, `SW1` | Tri-colour status indication and the built-in self-test drive; user button. |
 
@@ -48,17 +48,37 @@ From [Assembly.pdf](Assembly.pdf). Passives are 0603.
 | DS3 | HSMH-C190 | 1 | Red status LED |
 | Q1, Q2, Q3 | BSS138 | 3 | N-ch MOSFET — LED drivers |
 | SW1 | FSM4JSMATR | 1 | Tactile push-button |
-| C1–C8, C10, C12, C16, C17, C20 | 100 nF 50 V | 13 | Decoupling |
+| C1–C5, C7, C8, C10, C12, C17, C20 | 100 nF 50 V | 11 | Decoupling |
 | C9, C11 | TACR106K016RTA | 2 | 10 µF tantalum |
 | C13 | C0603C105K3RACTU | 1 | 1 µF |
 | C14 | CC0603KRX5R9BB225 | 1 | 2.2 µF |
 | C15 | VJ0603Y472KXBCW1BC | 1 | 4.7 nF |
 | C18, C19 | GRM188R61E106MA73J | 2 | 10 µF |
-| R1, R2, R3, R4, R8, R9, R10, R11, R12, R17, R18, R21 | RC0603FR-0710KL | 12 | 10 kΩ 1% |
+| R2, R3, R8, R9, R10, R11, R17, R21 | RC0603FR-0710KL | 8 | 10 kΩ 1% |
 | R5, R6, R7 | RC0603FR-07523RL | 3 | 523 Ω 1% (LED series) |
-| R13, R14, R15 | RC0603JR-070RL | 3 | 0 Ω (signal links) |
-| R16 | RC0603FR-0751RL | 1 | 51 Ω 1% |
-| R19, R20 | RC0603FR-071KL | 2 | 1 kΩ 1% |
+| R13, R14 | RC0603JR-070RL | 2 | 0 Ω (signal links: sensor output to comparator and ADC) |
+| R16 | RC0603FR-0751RL | 1 | 51 Ω 1% (ADC input filter, with C15) |
+| R18 | 2.21 kΩ 1% | 1 | Comparator threshold divider, top |
+| R20 | RC0603FR-071KL | 1 | 1 kΩ 1% — comparator threshold divider, bottom |
+
+> **Do not fit:** `C6`, `C16`, `R1`, `R4`, `R12`, `R15`, `R19`. They are marked
+> *NO FIT* on the schematic and are absent from the assembly BOM. `R18` must be
+> 2.21 kΩ, not 10 kΩ — it sets the comparator threshold.
+
+## Module socket (U1)
+
+`U1` is named for, and pinned like, the HSN-1000 nuclear event detector, so the
+footprint keeps that part's signal names. The BHG-3000 uses four of the pins:
+
+| U1 pin | Carrier net | BHG-3000 signal |
+|---:|---|---|
+| 6 | `BIST_BUFF` (from `U3`) | `BIST_EN` — high lights the self-test LED |
+| 7 | `GND` | `GND` |
+| 11 | `2ND_OUT` → comparator (`R13`) and ADC (`R14`) | `VOUT` — log-amp output |
+| 14 | `5V` | `5V` |
+
+The remaining pins are unused by the BHG-3000. The Pico pin assignments are
+listed in the [firmware README](../../code/optical_bhang/README.md#pin-map).
 
 ## Assembly notes
 

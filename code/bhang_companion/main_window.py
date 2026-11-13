@@ -23,6 +23,8 @@ from bhang_companion.protocol import (
     StatusReport,
     BistDone,
     Reject,
+    YieldReport,
+    DeviceError,
 )
 from bhang_companion.serial_worker import SerialWorker
 from bhang_companion.widgets.config_dialog import ConfigDialog
@@ -186,6 +188,16 @@ class MainWindow(QMainWindow):
         elif isinstance(msg, Reject):
             self._status.set_reject(msg.reason)
             self._console.append_note(f"REJECT: {msg.reason}")
+        elif isinstance(msg, YieldReport):
+            self._status.set_yield_values(msg.yield_tmin_kt, msg.yield_tinter_kt)
+            note = "DETECTION — yield reported by device"
+            if msg.tmin_suspect:
+                note += " (t_min outside its window: T_MIN_SUSPECT)"
+            self._console.append_note(note)
+            self.statusBar().showMessage(note)
+        elif isinstance(msg, DeviceError):
+            self._console.append_note(f"Device error: {msg.message}")
+            self.statusBar().showMessage(f"Device error: {msg.message}")
         elif isinstance(msg, DumpHeader):
             # parse_line returns None for header lines (consumed by assembler);
             # this branch is a safety net — should not normally fire.
@@ -270,11 +282,17 @@ class MainWindow(QMainWindow):
 
     @Slot(dict)
     def _on_config_push(self, cfg: dict) -> None:
+        # The firmware rejects SET and SAVE unless IDLE, so DISARM must come
+        # first. Re-arm afterwards only if the device was armed to begin with
+        # (in first-boot config mode it is not, and ARM is refused there).
+        was_armed = self._local_state == "ARMED"
+        self._send(protocol.cmd_disarm())
         for key, value in cfg.items():
             if value.strip():
                 self._send(protocol.cmd_set(key, value))
-        self._send(protocol.cmd_disarm())
         self._send(protocol.cmd_save())
+        if was_armed:
+            self._send(protocol.cmd_arm())
         self.statusBar().showMessage("Config pushed — waiting for OK SAVED…")
 
     @Slot()

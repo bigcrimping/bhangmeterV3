@@ -107,6 +107,18 @@ class Reject:
     reason: str
 
 @dataclass
+class YieldReport:
+    """A real detection: 'YIELD tmin=… kt tinter=… kt [T_MIN_SUSPECT]'."""
+    yield_tmin_kt: Optional[float]
+    yield_tinter_kt: Optional[float]
+    tmin_suspect: bool = False
+
+@dataclass
+class DeviceError:
+    """An 'ERR …' reply to a command."""
+    message: str
+
+@dataclass
 class DumpHeader:
     t0_epoch_us: int
     sample_rate_hz: int
@@ -159,7 +171,9 @@ def _kv_tokens(stripped: str) -> dict:
     return out
 
 
-def parse_line(line: str) -> "StateChange | StatusReport | BistDone | Reject | None":
+def parse_line(
+    line: str,
+) -> "StateChange | StatusReport | BistDone | Reject | YieldReport | DeviceError | None":
     """Parse a single stripped line. Returns None if unrecognised or a DUMP stream line."""
     stripped = line.strip()
     if not stripped:
@@ -237,6 +251,24 @@ def parse_line(line: str) -> "StateChange | StatusReport | BistDone | Reject | N
     if upper.startswith("REJECT"):
         reason = stripped[len("REJECT"):].lstrip(": ").strip()
         return Reject(reason=reason)
+
+    # Real detection: "YIELD tmin=98.2 kt tinter=101.5 kt [T_MIN_SUSPECT]".
+    # (BIST_DONE lines also contain YIELD but are handled above; the DUMP header
+    # keys are "YIELD_…:" and so do not match the trailing space.)
+    if upper.startswith("YIELD "):
+        kv = _kv_tokens(stripped)
+        try:
+            return YieldReport(
+                yield_tmin_kt=_parse_float_or_none(kv.get("tmin", "N/A")),
+                yield_tinter_kt=_parse_float_or_none(kv.get("tinter", "N/A")),
+                tmin_suspect="T_MIN_SUSPECT" in upper,
+            )
+        except ValueError:
+            return None
+
+    # Command error reply: "ERR not_idle (DISARM first)".
+    if upper.startswith("ERR ") or upper == "ERR":
+        return DeviceError(message=stripped[3:].strip())
 
     return None
 

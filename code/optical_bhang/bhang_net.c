@@ -1,9 +1,10 @@
 /**
  * bhang_net.c — WiFi init, NTP sync, GitHub Contents API upload.
  *
- * Single-core, blocking implementation. net_upload_optical() does a
- * synchronous GET (for the file SHA) then PUT. Safe to call from main loop
- * when not in CAPTURING or ANALYSING state.
+ * net_init() runs once on core0 at boot (cyw43 must be initialised on the core
+ * that owns the GPIO interrupts). The blocking upload calls — net_upload_optical()
+ * and net_upload_beacon(), each a read-modify-write of the status file — are
+ * made from core1 only; they share one static HTTP client and are not re-entrant.
  */
 
 #include "bhang_net.h"
@@ -43,7 +44,7 @@ void sntp_set_time_callback(uint32_t sec, uint32_t us) {
     g_ntp_epoch_us = (uint64_t)sec * 1000000ULL + (uint64_t)us;
     g_ntp_boot_us  = time_us_64();
     g_ntp_synced   = true;
-    printf("NTP synced\r\n");
+    /* No printf here: this runs in the cyw43 background (interrupt) context. */
 }
 
 /* ---------------------------------------------------------------------------
@@ -603,15 +604,26 @@ static void fmt_datetime(char *buf, size_t len) {
     strftime(buf, len, "%Y-%m-%d %H:%M:%S", &tm);
 }
 
+/* Quoted "YYYY-MM-DD HH:MM:SS" UTC for a boot-relative time_us_64() instant, or
+ * the bare JSON literal null if the clock has never synced. Converted at upload
+ * time, so an event captured before the first NTP sync still gets its true time
+ * once the clock is known. */
+static void fmt_boot_instant_q(char *buf, size_t len, uint64_t boot_us) {
+    uint64_t epoch_us = 0;
+    if (!net_boot_to_epoch_us(boot_us, &epoch_us)) { snprintf(buf, len, "null"); return; }
+    time_t t = (time_t)(epoch_us / 1000000ULL);
+    struct tm tm;
+    gmtime_r(&t, &tm);
+    strftime(buf, len, "\"%Y-%m-%d %H:%M:%S\"", &tm);
+}
+
 /* Yield as "%.1f", or "null" when not derivable (negative). */
 static void fmt_yield(char *buf, size_t len, float kt) {
     if (kt < 0.0f) snprintf(buf, len, "null");
     else           snprintf(buf, len, "%.1f", (double)kt);
 }
 
-/* Timing in ms as "%.1f", or "null" when not derivable (negative sentinel).
- * On the edge-band fallback path t_min is unavailable (-1) while t_inter is
- * valid, so the two fields can legitimately disagree on null-ness. */
+/* Timing in ms as "%.1f", or "null" when not derivable (negative sentinel). */
 static void fmt_ms(char *buf, size_t len, float ms) {
     if (ms < 0.0f) snprintf(buf, len, "null");
     else           snprintf(buf, len, "%.1f", (double)ms);
@@ -693,10 +705,14 @@ static int status_default(char *buf, size_t sz, long total_minutes,
         total_minutes, g_cfg.device_id, g_cfg.lat, g_cfg.lon, date_q);
 }
 
-/* Raw GET the current status file into out (NUL-terminated JSON object).
- * Returns false if the file is absent (HTTP 404) or any non-200 status, so the
- * caller creates a fresh record rather than parsing GitHub's error body. */
-static bool status_fetch(struct altcp_tls_config *tls, char *out, size_t outsz) {
+/* Outcome of reading the current status file. Only STATUS_ABSENT licenses the
+ * caller to create a fresh record; on STATUS_ERROR (timeout, 5xx, rate limit,
+ * auth) the caller must give up and retry later, otherwise a transient failure
+ * would overwrite the accumulated uptime and any recorded detection. */
+typedef enum { STATUS_FOUND, STATUS_ABSENT, STATUS_ERROR } status_fetch_t;
+
+/* Raw GET the current status file into out (NUL-terminated JSON object). */
+static status_fetch_t status_fetch(struct altcp_tls_config *tls, char *out, size_t outsz) {
     gh_client_t *c = &g_http;
     memset(c, 0, sizeof(*c));
     c->doing_get = false;
@@ -708,18 +724,25 @@ static bool status_fetch(struct altcp_tls_config *tls, char *out, size_t outsz) 
         "Accept: application/vnd.github.raw\r\n"
         "Connection: close\r\n\r\n",
         g_cfg.gh_user, g_cfg.gh_repo, g_cfg.gh_file, g_cfg.gh_token);
-    gh_run(c, tls, 8000);
+    bool complete = gh_run(c, tls, 8000);
 
     /* A 404 still returns a JSON error body, so the brace check alone is not
      * enough — require a 200 before treating the body as the real file. */
-    if (c->status_code != 200) return false;
+    if (c->status_code == 404) return STATUS_ABSENT;
+    if (c->status_code != 200 || !complete) {
+        printf("NET: status fetch failed (status=%d)\r\n", c->status_code);
+        return STATUS_ERROR;
+    }
 
-    char *jstart = strchr(c->resp, '{');
+    /* Search the body only, so a brace in a response header cannot match. */
+    char *body   = strstr(c->resp, "\r\n\r\n");
+    char *jstart = body ? strchr(body, '{') : NULL;
     char *jend   = jstart ? strrchr(jstart, '}') : NULL;
-    if (!jstart || !jend || jend <= jstart) return false;
+    /* A complete 200 with no JSON object is an empty/corrupt file: recreate it. */
+    if (!jstart || !jend || jend <= jstart) return STATUS_ABSENT;
     *(jend + 1) = '\0';
     snprintf(out, outsz, "%s", jstart);
-    return true;
+    return STATUS_FOUND;
 }
 
 /* Fetch the current SHA then PUT the given JSON content, retrying transient
@@ -759,18 +782,18 @@ static bool status_commit(struct altcp_tls_config *tls, const char *json) {
  * Detection event — read-modify-write the station status record.
  *
  * Always updates the two decoded yields (from time-to-minima and from the
- * inter-pulse interval). A REAL detection also sets "nuke gone off?" = "yes"
- * and "nuke detected time"; a BIST updates only the yields so the decode path
- * can be exercised without raising the alarm. The uptime counter and all other
- * fields are preserved. t_min_ms/t_inter_ms/total_captures are also written into
- * the status JSON (t_peak_to_min_ms / t_peak_to_peak_ms / total_captures).
+ * inter-pulse interval) and the raw timings, and increments the lifetime
+ * "total_captures" count held in the record itself. A REAL detection also sets
+ * "nuke gone off?" = "yes" and "nuke detected time" (the time of the flash
+ * onset, not of the upload). The uptime counter and all other fields are
+ * preserved.
  * --------------------------------------------------------------------------- */
 bool net_upload_optical(const char *source,
+                        uint64_t t0_boot_us,
                         float t_min_ms,
                         float t_inter_ms,
                         float yield_tmin_kt,
-                        float yield_tinter_kt,
-                        uint32_t total_captures) {
+                        float yield_tinter_kt) {
     if (!net_ensure_connected()) {
         printf("NET: not connected, skipping upload\r\n");
         return false;
@@ -783,19 +806,37 @@ bool net_upload_optical(const char *source,
 
     char ts[32];   fmt_datetime(ts, sizeof(ts));
     char ts_q[40]; snprintf(ts_q, sizeof(ts_q), "\"%s\"", ts);
+    char det_q[40]; fmt_boot_instant_q(det_q, sizeof(det_q), t0_boot_us);
     char ym[16];   fmt_yield(ym, sizeof(ym), yield_tmin_kt);
     char yi[16];   fmt_yield(yi, sizeof(yi), yield_tinter_kt);
     char tm[16];   fmt_ms(tm, sizeof(tm), t_min_ms);
     char ti[16];   fmt_ms(ti, sizeof(ti), t_inter_ms);
-    char nc[16];   snprintf(nc, sizeof(nc), "%lu", (unsigned long)total_captures);
     /* BIST no longer uploads, so this path is REAL-only; the alarm gate stays as
      * a safety belt so a stray non-REAL caller could never raise a false alarm. */
     bool real = (strcmp(source, "REAL") == 0);
 
     char b0[768], b1[768];
     char *src = b0, *dst = b1;
-    if (!status_fetch(tls, src, sizeof(b0)))
+    long prev_captures = 0;
+    switch (status_fetch(tls, src, sizeof(b0))) {
+    case STATUS_FOUND: {
+        char *vend, *v = json_value_span(src, "total_captures", &vend);
+        if (v) prev_captures = strtol(v, NULL, 10);   /* null/garbage -> 0 */
+        if (prev_captures < 0) prev_captures = 0;
+        break;
+    }
+    case STATUS_ABSENT:
         status_default(src, sizeof(b0), 0, ts_q);
+        break;
+    default:
+        /* Could not read the record: do not overwrite it. Caller retries. */
+        cyw43_arch_lwip_begin();
+        altcp_tls_free_config(tls);
+        cyw43_arch_lwip_end();
+        printf("NET: event upload FAILED (status record unreadable)\r\n");
+        return false;
+    }
+    char nc[16];   snprintf(nc, sizeof(nc), "%ld", prev_captures + 1);
 
     /* Record the derived yields plus the raw timing observables that produced
      * them and the lifetime capture count. Only a REAL detection raises the
@@ -807,7 +848,7 @@ bool net_upload_optical(const char *source,
     status_apply(&src, &dst, sizeof(b0), "total_captures",         nc);
     if (real) {
         status_apply(&src, &dst, sizeof(b0), "nuke gone off?",     "\"yes\"");
-        status_apply(&src, &dst, sizeof(b0), "nuke detected time", ts_q);
+        status_apply(&src, &dst, sizeof(b0), "nuke detected time", det_q);
     }
 
     printf("NET: event %s yield_min=%s yield_int=%s t_min=%s t_inter=%s\r\n",
@@ -846,7 +887,16 @@ bool net_upload_beacon(void) {
     char b0[768], b1[768];
     char *src = b0, *dst = b1;
 
-    if (status_fetch(tls, src, sizeof(b0))) {
+    status_fetch_t fetched = status_fetch(tls, src, sizeof(b0));
+    if (fetched == STATUS_ERROR) {
+        /* Could not read the record: skip this beacon rather than reset it. */
+        cyw43_arch_lwip_begin();
+        altcp_tls_free_config(tls);
+        cyw43_arch_lwip_end();
+        printf("NET: beacon upload FAILED (status record unreadable)\r\n");
+        return false;
+    }
+    if (fetched == STATUS_FOUND) {
         long prev = 0;
         char *vend, *v = json_value_span(src, "total minutes monitored", &vend);
         if (v) prev = strtol(v, NULL, 10);

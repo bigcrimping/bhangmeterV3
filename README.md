@@ -39,7 +39,7 @@ A tour of the build, front to back:
   </picture>
 </p>
 
-<p align="center"><em>The companion app — a PySide6 desktop console for driving the device, watching live waveforms, and reviewing captured events.</em></p>
+<p align="center"><em>The companion app — a PySide6 desktop console for driving the device, watching its state, and plotting captured waveforms.</em></p>
 
 ---
 
@@ -74,7 +74,7 @@ smoothly. Three phases produce two distinct optical peaks:
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/double-pulse-annotated-dark.png">
-    <img alt="Anatomy of a 100 kt double pulse: first peak near 1 ms, shallow inter-pulse minimum (~0.1 of peak) at t_min 26 ms, second peak at t_inter 316 ms, with the three physical phases shaded" src="assets/double-pulse-annotated-light.png" width="80%">
+    <img alt="Anatomy of a 100 kt double pulse: first peak near 1 ms, shallow inter-pulse minimum (~0.1 of peak) at t_min 27 ms, second peak at t_inter 316 ms, with the three physical phases shaded" src="assets/double-pulse-annotated-light.png" width="80%">
   </picture>
 </p>
 
@@ -93,21 +93,22 @@ yield estimates, but they are not co-equal: `t_inter` is the primary estimator
 to roughly ±15 % across 10 kt – 1 Mt at 5–20 km — while `t_min` is a coarse
 cross-check. The minimum is a shallow, flat-bottomed feature, so its measured
 time carries tens-of-percent uncertainty that the `W ∝ t^1.7` inversion amplifies.
-Acceptance is therefore driven by `t_inter`, with `t_min` only required to land in
-its (wide) window.
+Acceptance is therefore driven by `t_inter` alone; a `t_min` outside its (wide)
+window does not reject the event, it only flags the result `T_MIN_SUSPECT`.
 
 | Yield | T_min (peak→min) | T_inter (peak→peak) |
 |---|---:|---:|
 | 10 kt | 7 ms | 115 ms |
 | 50 kt | 18 ms | 233 ms |
-| 100 kt | 26 ms | 316 ms |
+| 100 kt | 27 ms | 316 ms |
 | 250 kt | 45 ms | 473 ms |
 | 500 kt | 67 ms | 642 ms |
 | 1 Mt | 100 ms | 871 ms |
 
-The device reports a yield only when the timing lands in the valid window —
-`t_inter` 90–1050 ms, `t_min` 5–130 ms — i.e. the 10 kt – 1 Mt design envelope
-with slack. (High-altitude bursts lack the hydrodynamic minimum and fall outside
+The device reports a yield only when `t_inter` lands in its valid window,
+90–1050 ms — i.e. the 10 kt – 1 Mt design envelope with slack. `t_min` has an
+advisory window of 5–130 ms; outside it the yield is still reported, flagged
+`T_MIN_SUSPECT`. (High-altitude bursts lack the hydrodynamic minimum and fall outside
 this instrument's scope.)
 
 <p align="center">
@@ -157,10 +158,14 @@ output:
 VLOG = 246 mV × log₁₀(I_pd / 1 pA)      ⇔      I_pd = 10^(VLOG / 0.246 − 12)
 ```
 
-The 246 mV/decade slope is the front-end's measured/design figure. <!-- TODO:
-re-derive its justification from the schematic — the earlier "RLOG = 123 kΩ"
-claim does not match the BHG-3000 BOM, whose AD8304 buffer network is
-309 k / 13.3 k / 6.34 k. --> A fixed **OD 2.0** neutral-density filter (1 %
+Both constants follow from the BHG-3000 network at AD8304 datasheet nominals
+(200 mV/decade and a 100 pA intercept at `VLOG`, 5 kΩ `VLOG` source resistance,
+2.0 V `VREF`). `R2` (24.9 kΩ, `VREF` → `VLOG`) scales the slope by
+24.9 / (24.9 + 5) to ≈167 mV/decade and adds ≈0.33 V; the output buffer's gain of
+1 + `R4`/`R3` = 1 + 6.34 k / 13.3 k ≈ 1.48 then gives **246 mV/decade** and a
+≈0.49 V offset, equivalent to moving the intercept from 100 pA down to ≈1 pA.
+(`R1`, 309 kΩ, is not fitted.) These are nominal values, so calibrate against a
+known source for absolute work. A fixed **OD 2.0** neutral-density filter (1 %
 transmission, effective aperture `A_eff = 1.51 × 10⁻⁸ m²`) pulls the bright
 extreme back under the AD8304's 10 mA ceiling. First-pulse saturation is
 *accepted*: the comparator has already timestamped the leading edge to sub-µs, and the
@@ -194,7 +199,7 @@ ADC) carries the fast edge. The whole double pulse lands in one clean trace:
 </p>
 
 The literature waveforms make the detection strategy explicit. Mapped through the
-repo's amplitude calibration, the VLOG output clears the 1.05 V comparator
+repo's amplitude calibration, the VLOG output clears the 1.03 V comparator
 threshold (red) well above the 0.9 V background (dashed) on the leading
 edge, but the inter-pulse minimum stays **≥ ~1.3 V** at every preset — so the
 comparator never recrosses its threshold between the pulses, which is exactly why
@@ -203,7 +208,7 @@ the second-peak timing is recovered from the ADC trace rather than a second edge
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/vlog-waveforms-literature-dark.png">
-    <img alt="Literature VLOG waveforms at 10 km for 10 kt to 1 Mt with the 1.05 V comparator threshold and 0.9 V background marked; the inter-pulse minimum stays above 1.3 V at every preset, so COMP_OUT never recrosses the threshold mid-event" src="assets/vlog-waveforms-literature-light.png" width="92%">
+    <img alt="Literature VLOG waveforms at 10 km for 10 kt to 1 Mt with the 1.03 V comparator threshold and 0.9 V background marked; the inter-pulse minimum stays above 1.3 V at every preset, so COMP_OUT never recrosses the threshold mid-event" src="assets/vlog-waveforms-literature-light.png" width="92%">
   </picture>
 </p>
 
@@ -215,7 +220,7 @@ the second-peak timing is recovered from the ADC trace rather than a second edge
 |---|---|
 | [code/](code) | All software. The [firmware](code/optical_bhang) (RP2350 / Pico 2 W) and the [companion app](code/bhang_companion) (PySide6 desktop operator console). See [code/README.md](code/README.md). |
 | [PCB/](PCB) | Hardware design — two boards: the **carrier** ([bhangmeterv3](PCB/bhangmeterv3)) and the **BHG-3000 sensor head** ([BHG-3000](PCB/BHG-3000)). Schematics, assembly drawings + BOMs, and Gerbers. See [PCB/README.md](PCB/README.md). |
-| [mech/](mech) | Mechanical / enclosure design — 3D-printable models (e.g. STL/STEP) for the housing and optical mount. |
+| [mech/](mech) | Mechanical / enclosure design — 3D-printable `.3mf` models: `front`, `rear`, `plunger` and `washer`. |
 
 ---
 
@@ -227,7 +232,7 @@ the second-peak timing is recovered from the ADC trace rather than a second edge
 | Logarithmic amp | **AD8304** | Log-compresses the photodiode current so one fixed-gain front-end spans the dim baseline up to a saturating first pulse (several decades) — no gain switching mid-event. |
 | Edge timing | **LT1711** comparator | Sub-µs timestamp of the leading edge regardless of amplitude (first-pulse saturation is accepted). |
 | Waveform capture | **AD7091R** ADC (SPI) | Records the analog shape so peak/minimum/second-peak can be analysed. |
-| Compute / comms | **RP2350** (Pico 2 W) | Dual-core: detection + control on core 0, WiFi/NTP/HTTPS upload on core 1. |
+| Compute / comms | **RP2350** (Pico 2 W) | Dual-core: detection + control on core 0 (which also brings WiFi up at boot); the blocking HTTPS uploads and liveness beacon run on core 1. |
 | Blast cross-check | Honeywell HSC pressure sensor | *(planned)* overpressure reference to back up the optical yield estimate. |
 
 > **VEMD2704** — 1.51 mm² active area, ~0.40 A/W broadband responsivity, 17.6 pF,
@@ -265,8 +270,13 @@ dedicated, fine-grained GitHub token (see the firmware README's security notes).
 
 ## References
 
-- Glasstone, S. & Dolan, P. J. *The Effects of Nuclear Weapons*, 3rd ed., 1977 (§7.78–7.88).
+- Glasstone, S. & Dolan, P. J. *The Effects of Nuclear Weapons*, 3rd ed., 1977 (chiefly §2.125 and §7.76–7.88).
+- Sublette, C. *Nuclear Weapons Frequently Asked Questions* (Nuclear Weapon Archive), §5 — cited above as "NWA FAQ".
 - Bridgman, C. J. *Introduction to the Physics of Nuclear Weapons Effects*, DTRA, 2001.
 - Brode, H. L. "Fireball Phenomenology," RAND, 1964.
 - U.S. AEC, *Capabilities of Nuclear Weapons* (DNA EM-1), declassified excerpts.
+
+[^gd]: Glasstone & Dolan 1977: `t_inter` is the §7.85 second-maximum scaling for
+    air bursts below 15,000 ft; `t_min` is a fit through §2.125 (≈11 ms at 20 kt)
+    and the NWA FAQ §5 (≈100 ms at 1 Mt).
 

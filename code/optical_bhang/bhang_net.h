@@ -32,21 +32,26 @@ void net_fmt_utc(char *buf, size_t len);
  * Returns false (and writes 0) until the first NTP sync. */
 bool net_boot_to_epoch_us(uint64_t boot_us, uint64_t *epoch_us);
 
-/* Read-modify-write the station status file on a detection event. Always sets
- * the two decoded yields; a REAL detection also sets "nuke gone off?" = "yes"
- * and "nuke detected time" (a BIST is a self-test and does not raise the alarm).
- * All other fields (uptime counter, etc.) are preserved.
- * Blocks for up to ~25 s. Returns true on HTTP 200/201.
- * source         : "REAL" (raises alarm) or "BIST" (yields only)
+/* Read-modify-write the station status file on a detection event. Sets the two
+ * decoded yields and raw timings and increments the record's lifetime
+ * "total_captures"; a REAL detection also sets "nuke gone off?" = "yes" and
+ * "nuke detected time". All other fields (uptime counter, etc.) are preserved.
+ * If the existing record cannot be read (anything but "file absent"), nothing is
+ * written and false is returned, so the caller can retry without data loss.
+ * Blocks while it retries. Returns true on HTTP 200/201.
+ * source         : "REAL" raises the alarm; anything else updates values only
+ *                  (BIST results are never uploaded)
+ * t0_boot_us     : flash onset as a time_us_64() value; written as the detected
+ *                  time (null in JSON if the clock has never synced)
  * yield_tmin_kt  : yield from time-to-minima  (< 0 → null in JSON)
  * yield_tinter_kt: yield from inter-pulse interval (< 0 → null in JSON)
- * t_min_ms / t_inter_ms / total_captures: also written into the status JSON */
+ * t_min_ms / t_inter_ms: also written into the status JSON */
 bool net_upload_optical(const char *source,
+                        uint64_t t0_boot_us,
                         float t_min_ms,
                         float t_inter_ms,
                         float yield_tmin_kt,
-                        float yield_tinter_kt,
-                        uint32_t total_captures);
+                        float yield_tinter_kt);
 
 /* Liveness beacon: GET the station status file, read "total minutes monitored",
  * add BEACON_PERIOD_MIN, and PUT the updated status JSON back. Blocks for up to

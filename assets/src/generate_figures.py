@@ -96,9 +96,11 @@ def W_from_min(t_ms):
 # --------------------------------------------------------------------------- #
 # AD8304 logarithmic transimpedance amp + VEMD2704 front-end
 # --------------------------------------------------------------------------- #
-# VLOG slope (V/decade). TODO: 246 mV/decade is the design value; the "RLOG =
-# 123 kohm" justification does not match the BHG-3000 BOM (AD8304 buffer network
-# is 309 k / 13.3 k / 6.34 k) — treat as measured/design until re-derived.
+# VLOG slope (V/decade) and intercept, from the BHG-3000 network at AD8304
+# datasheet nominals: 200 mV/decade x 24.9k/(24.9k + 5k) [R2 from VREF against
+# the 5 kohm VLOG source] x (1 + 6.34k/13.3k) [buffer gain, R4/R3] = 246 mV/decade;
+# the 2 V VREF through R2 adds ~0.49 V at the output, which moves the intercept
+# from 100 pA to ~1 pA. (R1, 309 kohm, is not fitted.)
 VLOG_SLOPE = 0.246  # V / decade
 I_REF = 1e-12  # 1 pA intercept
 AD8304_I_MIN = 1e-10  # 100 pA floor
@@ -641,7 +643,7 @@ def fig_carrier(fig):
 # Figure - literature VLOG waveforms at 10 km, all presets overlaid, with the
 # comparator threshold and background level marked.
 # --------------------------------------------------------------------------- #
-VLOG_LIT_THRESHOLD = 1.05  # V
+VLOG_LIT_THRESHOLD = 1.03  # V  (carrier R18/R20: 3.3 V x 1k / (2.21k + 1k))
 VLOG_LIT_BACKGROUND = 0.9  # V
 
 
@@ -653,13 +655,14 @@ def fig_vlog_waveforms_literature(fig):
     for W, c in zip(PRESETS_KT, YIELD_COLORS):
         tm = float(t_min_ms(W))
         p = double_pulse_power(t, W)
-        p /= p.max()
+        p_max = p.max()          # keep the raw peak: the marker below needs it
+        p = p / p_max
         i_peak = float(photocurrent(W, REF_KM, "2nd"))
         i_floor = i_peak / 130.0
         i = i_floor + p * (i_peak - i_floor)
         v = vlog_from_current(i)
         ax.plot(t, v, color=c, lw=1.8, label=f"{W} kt")
-        pm = double_pulse_power(np.array([tm]), W) / p.max()
+        pm = double_pulse_power(np.array([tm]), W) / p_max
         i_m = i_floor + pm * (i_peak - i_floor)
         v_m = float(vlog_from_current(i_m)[0])
         ax.plot([tm], [v_m], marker="v", color=c, ms=7, zorder=5)
